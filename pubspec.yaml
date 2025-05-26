@@ -1,7 +1,7 @@
 name: champion_api
 description: A Dart library for mocking Deriv trading API responses, designed for testing and development.
 version: 1.0.0
-# repository: https://github.com/yourusername/champion_api
+repository: https://github.com/ahrar-deriv/champion_api
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
