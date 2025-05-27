@@ -51,16 +51,23 @@ class MarketService {
   Stream<OHLC> streamOHLC({
     required String instrumentId,
     required int granularity,
-  }) {
+  }) async* {
     final queryParams = {
       'instrument_id': instrumentId,
       'granularity': granularity.toString(),
     };
 
-    return _apiClient
-        .getStream('/market/instruments/candles/stream',
-            queryParams: queryParams)
-        .map((data) => OHLC.fromJson(data));
+    await for (final data in _apiClient.getStream(
+        '/market/instruments/candles/stream',
+        queryParams: queryParams)) {
+      // Handle the response structure: {"data":{"instrument_id":"...", "candles":[...]}}
+      if (data.containsKey('data') && data['data'].containsKey('candles')) {
+        final candles = data['data']['candles'] as List<dynamic>;
+        for (final candleData in candles) {
+          yield OHLC.fromJson(candleData as Map<String, dynamic>);
+        }
+      }
+    }
   }
 
   /// Get historical tick data
@@ -82,14 +89,22 @@ class MarketService {
   /// Stream real-time tick data
   ///
   /// Calls: GET /v1/market/instruments/ticks/stream
-  Stream<Tick> streamTicks({required String instrumentId}) {
+  Stream<Tick> streamTicks({required String instrumentId}) async* {
     final queryParams = {
       'instrument_id': instrumentId,
     };
 
-    return _apiClient
-        .getStream('/market/instruments/ticks/stream', queryParams: queryParams)
-        .map((data) => Tick.fromJson(data));
+    await for (final data in _apiClient.getStream(
+        '/market/instruments/ticks/stream',
+        queryParams: queryParams)) {
+      // Handle the response structure: {"data":{"instrument_id":"R_50","ticks":[...]}}
+      if (data.containsKey('data') && data['data'].containsKey('ticks')) {
+        final ticks = data['data']['ticks'] as List<dynamic>;
+        for (final tickData in ticks) {
+          yield Tick.fromJson(tickData as Map<String, dynamic>);
+        }
+      }
+    }
   }
 
   /// List available trading products
@@ -108,9 +123,13 @@ class MarketService {
   /// Get product configuration details
   ///
   /// Calls: GET /v1/market/products/config
-  Future<ProductConfig> getProductConfig({required String productId}) async {
+  Future<ProductConfig> getProductConfig({
+    required String productId,
+    required String instrumentId,
+  }) async {
     final queryParams = {
       'product_id': productId,
+      'instrument_id': instrumentId,
     };
 
     final response = await _apiClient.get('/market/products/config',

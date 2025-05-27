@@ -22,11 +22,14 @@ class TradingService {
 
     List<dynamic> contractsData;
     if (response.containsKey('data')) {
-      if (response['data'] is List) {
-        contractsData = response['data'] as List<dynamic>;
+      final data = response['data'];
+      if (data.containsKey('contracts')) {
+        contractsData = data['contracts'] as List<dynamic>;
+      } else if (data is List) {
+        contractsData = data;
       } else {
         // Single contract returned
-        contractsData = [response['data']];
+        contractsData = [data];
       }
     } else if (response is List) {
       contractsData = response;
@@ -60,7 +63,14 @@ class TradingService {
 
     List<dynamic> contractsData;
     if (response.containsKey('data')) {
-      contractsData = response['data'] as List<dynamic>;
+      final data = response['data'];
+      if (data.containsKey('contracts')) {
+        contractsData = data['contracts'] as List<dynamic>;
+      } else if (data is List) {
+        contractsData = data;
+      } else {
+        contractsData = [data];
+      }
     } else {
       contractsData = response as List<dynamic>;
     }
@@ -73,19 +83,29 @@ class TradingService {
   /// Stream open contracts updates
   ///
   /// Calls: GET /v1/trading/contracts/open/stream
-  Stream<List<Contract>> streamOpenContracts() {
-    return _apiClient.getStream('/trading/contracts/open/stream').map((data) {
+  Stream<List<Contract>> streamOpenContracts() async* {
+    await for (final data
+        in _apiClient.getStream('/trading/contracts/open/stream')) {
       List<dynamic> contractsData;
       if (data.containsKey('data')) {
-        contractsData = data['data'] as List<dynamic>;
+        final responseData = data['data'];
+        if (responseData.containsKey('contracts')) {
+          contractsData = responseData['contracts'] as List<dynamic>;
+        } else if (responseData is List) {
+          contractsData = responseData;
+        } else {
+          contractsData = [responseData];
+        }
+      } else if (data is List) {
+        contractsData = data;
       } else {
-        contractsData = data as List<dynamic>;
+        contractsData = [data];
       }
 
-      return contractsData
+      yield contractsData
           .map((e) => Contract.fromJson(e as Map<String, dynamic>))
           .toList();
-    });
+    }
   }
 
   /// Stream closed contracts updates
@@ -286,7 +306,7 @@ class TradingService {
     required String instrumentId,
     required double amount,
     Map<String, dynamic>? additionalParams,
-  }) {
+  }) async* {
     final queryParams = {
       'product_id': productId,
       'instrument_id': instrumentId,
@@ -295,13 +315,14 @@ class TradingService {
           ?.map((key, value) => MapEntry(key, value.toString())),
     };
 
-    return _apiClient
-        .getStream('/trading/proposal/stream', queryParams: queryParams)
-        .map((data) {
+    await for (final data in _apiClient.getStream('/trading/proposal/stream',
+        queryParams: queryParams)) {
+      // Handle the response structure: {"data":{...}}
       if (data.containsKey('data')) {
-        return Proposal.fromJson(data['data'] as Map<String, dynamic>);
+        yield Proposal.fromJson(data['data'] as Map<String, dynamic>);
+      } else {
+        yield Proposal.fromJson(data);
       }
-      return Proposal.fromJson(data);
-    });
+    }
   }
 }

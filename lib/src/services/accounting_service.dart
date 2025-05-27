@@ -23,10 +23,16 @@ class AccountingService {
   /// Stream real-time balance updates
   ///
   /// Calls: GET /v1/accounting/balance/stream
-  Stream<Balance> streamBalance() {
-    return _apiClient
-        .getStream('/accounting/balance/stream')
-        .map((data) => Balance.fromJson(data));
+  Stream<Balance> streamBalance() async* {
+    await for (final data
+        in _apiClient.getStream('/accounting/balance/stream')) {
+      // Handle the response structure: {"data":{...}}
+      if (data.containsKey('data')) {
+        yield Balance.fromJson(data['data'] as Map<String, dynamic>);
+      } else {
+        yield Balance.fromJson(data);
+      }
+    }
   }
 
   /// Reset balance to default value

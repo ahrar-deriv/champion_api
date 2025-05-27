@@ -12,16 +12,23 @@ class OHLC {
   /// Closing price
   final String close;
 
-  /// Timestamp in milliseconds since epoch
-  final int epochMs;
+  /// Opening timestamp in milliseconds since epoch
+  final int openEpochMs;
+
+  /// Closing timestamp in milliseconds since epoch
+  final int closeEpochMs;
 
   const OHLC({
     required this.open,
     required this.high,
     required this.low,
     required this.close,
-    required this.epochMs,
+    required this.openEpochMs,
+    required this.closeEpochMs,
   });
+
+  /// Backward compatibility - returns the close epoch
+  int get epochMs => closeEpochMs;
 
   factory OHLC.fromJson(Map<String, dynamic> json) {
     return OHLC(
@@ -29,7 +36,8 @@ class OHLC {
       high: json['high'] as String,
       low: json['low'] as String,
       close: json['close'] as String,
-      epochMs: json['epoch_ms'] as int,
+      openEpochMs: json['open_epoch_ms'] as int,
+      closeEpochMs: json['close_epoch_ms'] as int,
     );
   }
 
@@ -39,13 +47,14 @@ class OHLC {
       'high': high,
       'low': low,
       'close': close,
-      'epoch_ms': epochMs,
+      'open_epoch_ms': openEpochMs,
+      'close_epoch_ms': closeEpochMs,
     };
   }
 
   @override
   String toString() {
-    return 'OHLC(open: $open, high: $high, low: $low, close: $close, epochMs: $epochMs)';
+    return 'OHLC(open: $open, high: $high, low: $low, close: $close, openEpochMs: $openEpochMs, closeEpochMs: $closeEpochMs)';
   }
 }
 

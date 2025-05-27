@@ -19,7 +19,7 @@ class Product {
     required this.id,
     required this.displayName,
     this.description,
-    required this.isEnabled,
+    this.isEnabled = true,
     this.config,
   });
 
@@ -28,7 +28,7 @@ class Product {
       id: json['id'] as String,
       displayName: json['display_name'] as String,
       description: json['description'] as String?,
-      isEnabled: json['is_enabled'] as bool,
+      isEnabled: (json['is_enabled'] as bool?) ?? true,
       config: json['config'] as Map<String, dynamic>?,
     );
   }
