@@ -38,13 +38,19 @@ void main() async {
           instrumentId: instrumentId,
           amount: 10.0,
           multiplier: 100,
-          tradeType: 'up',
           stopLoss: 5.0,
           takeProfit: 20.0,
         );
-        print('   Proposal ask price: ${proposal.askPrice}');
-        if (proposal.payout != null) {
-          print('   Potential payout: ${proposal.payout}');
+        final proposalVariant = proposal.variants?.firstWhere(
+            (v) => v.variant == 'MULTUP' || v.variant == 'MULTDOWN',
+            orElse: () => throw StateError('No suitable variant found'));
+        if (proposalVariant == null) {
+          print('   Could not find a suitable proposal variant.');
+        } else {
+          print(
+              '   Proposal bid price: ${proposalVariant.contractDetails.bidPrice}');
+          print(
+              '   Potential payout: ${proposalVariant.contractDetails.potentialPayout}');
         }
         print('');
       } catch (e) {

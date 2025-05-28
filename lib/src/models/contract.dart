@@ -1,17 +1,42 @@
-/// Trading contract information
+/// Represents a trading contract
 class Contract {
   /// Unique contract identifier
   final String contractId;
 
-  /// Product type (multipliers, accumulators, rise_fall)
+  /// Product identifier (e.g., multipliers, accumulators)
   final String productId;
 
-  /// Contract details specific to the product type
+  /// Price at which the contract was bought
+  final String? buyPrice; // API often returns as string, can be null in streams
+
+  /// Epoch timestamp of when the contract was bought
+  final int? buyTime; // Can be null in streams if contract data is partial
+
+  /// Idempotency key used for the buy request
+  final String? idempotencyKey; // Present in buy response
+
+  // Fields from sell response
+  /// Price at which the contract was sold (optional)
+  final String? sellPrice; // API often returns as string
+
+  /// Profit/Loss of the contract after selling (optional)
+  final String? profit; // API often returns as string
+
+  /// Epoch timestamp of when the contract was sold (optional)
+  final int? sellTime;
+
+  /// Detailed information about the contract
   final ContractDetails contractDetails;
 
   const Contract({
     required this.contractId,
     required this.productId,
+    this.buyPrice,
+    this.buyTime,
+    this.idempotencyKey,
+    this.sellPrice,
+    this.profit,
+    this.sellTime,
     required this.contractDetails,
   });
 
@@ -19,10 +44,14 @@ class Contract {
     return Contract(
       contractId: json['contract_id'] as String,
       productId: json['product_id'] as String,
+      buyPrice: json['buy_price'] as String?,
+      buyTime: json['buy_time'] as int?,
+      idempotencyKey: json['idempotency_key'] as String?,
+      sellPrice: json['sell_price'] as String?,
+      profit: json['profit'] as String?,
+      sellTime: json['sell_time'] as int?,
       contractDetails: ContractDetails.fromJson(
-        json['contract_details'] as Map<String, dynamic>,
-        json['product_id'] as String,
-      ),
+          json['contract_details'] as Map<String, dynamic>),
     );
   }
 
@@ -30,353 +59,385 @@ class Contract {
     return {
       'contract_id': contractId,
       'product_id': productId,
+      if (buyPrice != null) 'buy_price': buyPrice,
+      if (buyTime != null) 'buy_time': buyTime,
+      if (idempotencyKey != null) 'idempotency_key': idempotencyKey,
+      if (sellPrice != null) 'sell_price': sellPrice,
+      if (profit != null) 'profit': profit,
+      if (sellTime != null) 'sell_time': sellTime,
       'contract_details': contractDetails.toJson(),
     };
   }
+
+  @override
+  String toString() {
+    return 'Contract(id: $contractId, product: $productId, buyPrice: $buyPrice)';
+  }
 }
 
-/// Contract details base class
-abstract class ContractDetails {
-  /// Instrument identifier
+/// Detailed information about a contract
+class ContractDetails {
+  /// Instrument ID (from open/closed contracts)
   final String? instrumentId;
 
-  /// Instrument name
+  /// Instrument display name (from open/closed contracts)
   final String? instrumentName;
 
+  /// Profit or loss of the contract (from open/closed contracts, often a string with +/-)
+  final String? profitLoss;
+
+  /// Reference ID for the contract (from open/closed contracts)
+  final String? referenceId;
+
+  /// Start time of the contract (epoch)
+  final int? contractStartTime;
+
+  /// Entry tick time (epoch)
+  final int? entryTickTime;
+
+  /// Entry spot price
+  final String? entrySpot; // API often returns as string
+
+  /// Exit spot price (for closed contracts)
+  final String? exitSpot;
+
+  /// Exit tick time (for closed contracts)
+  final int? exitTickTime;
+
+  /// Contract variant (e.g., MULTUP, MULTDOWN)
+  final String? variant;
+
+  /// Multiplier value (if applicable)
+  final int? multiplier;
+
+  /// Commission charged
+  final String? commission; // API often returns as string
+
   /// Stake amount
-  final String stake;
+  final String? stake; // API often returns as string
 
   /// Current bid price
-  final String bidPrice;
+  final String? bidPrice; // API often returns as string
 
-  /// Bid price currency
+  /// Currency of the bid price
   final String? bidPriceCurrency;
 
-  /// Whether the contract is expired
-  final bool isExpired;
+  /// Whether the contract has expired
+  final bool? isExpired;
 
-  /// Whether the contract is valid to sell
-  final bool isValidToSell;
+  /// Whether the contract is valid to be sold
+  final bool? isValidToSell;
 
   /// Whether the contract has been sold
-  final bool isSold;
+  final bool? isSold;
 
-  /// Contract status
+  /// Potential payout of the contract
+  final String? potentialPayout; // API often returns as string
+
+  /// Cancellation details (if applicable)
+  final CancellationDetails? cancellation;
+
+  /// Limit order details (if applicable)
+  final LimitOrderDetails? limitOrder;
+
+  /// Current status of the contract (e.g., open, sold, won, lost)
   final String? status;
+
+  /// Stream of ticks for the contract (if applicable)
+  final List<TickInStream>? tickStream;
+
+  /// Validation parameters (from buy response)
+  final Map<String, dynamic>? validationParams; // Keep as map for flexibility
+
+  /// Market Spot Price (can be part of some contract details)
+  final MarketSpotPrice? marketSpotPrice;
+
+  /// Additional fields not explicitly typed
+  final Map<String, dynamic> additionalFields;
 
   const ContractDetails({
     this.instrumentId,
     this.instrumentName,
-    required this.stake,
-    required this.bidPrice,
-    this.bidPriceCurrency,
-    required this.isExpired,
-    required this.isValidToSell,
-    required this.isSold,
-    this.status,
-  });
-
-  factory ContractDetails.fromJson(
-    Map<String, dynamic> json,
-    String productId,
-  ) {
-    switch (productId) {
-      case 'multipliers':
-        return MultiplierContractDetails.fromJson(json);
-      case 'accumulators':
-        return AccumulatorContractDetails.fromJson(json);
-      default:
-        return RiseFallContractDetails.fromJson(json);
-    }
-  }
-
-  Map<String, dynamic> toJson();
-}
-
-/// Multiplier contract details
-class MultiplierContractDetails extends ContractDetails {
-  /// Multiplier value
-  final int multiplier;
-
-  /// Commission amount
-  final String commission;
-
-  /// Cancellation information
-  final Cancellation? cancellation;
-
-  /// Trade variant (up/down)
-  final String? variant;
-
-  /// Current market spot price
-  final MarketSpotPrice? marketSpotPrice;
-
-  /// Entry spot price
-  final String? entrySpot;
-
-  /// Limit order information
-  final LimitOrder? limitOrder;
-
-  const MultiplierContractDetails({
-    required this.multiplier,
-    required this.commission,
-    this.cancellation,
-    this.variant,
-    this.marketSpotPrice,
-    this.entrySpot,
-    this.limitOrder,
-    required super.stake,
-    required super.bidPrice,
-    super.bidPriceCurrency,
-    required super.isExpired,
-    required super.isValidToSell,
-    required super.isSold,
-    super.instrumentId,
-    super.instrumentName,
-    super.status,
-  });
-
-  factory MultiplierContractDetails.fromJson(Map<String, dynamic> json) {
-    return MultiplierContractDetails(
-      multiplier: json['multiplier'] as int,
-      commission: json['commission'] as String,
-      cancellation: json['cancellation'] != null
-          ? Cancellation.fromJson(json['cancellation'] as Map<String, dynamic>)
-          : null,
-      variant: json['variant'] as String?,
-      marketSpotPrice: json['market_spot_price'] != null
-          ? MarketSpotPrice.fromJson(
-              json['market_spot_price'] as Map<String, dynamic>)
-          : null,
-      entrySpot: json['entry_spot'] as String?,
-      limitOrder: json['limit_order'] != null
-          ? LimitOrder.fromJson(json['limit_order'] as Map<String, dynamic>)
-          : null,
-      stake: json['stake'] as String,
-      bidPrice: json['bid_price'] as String,
-      bidPriceCurrency: json['bid_price_currency'] as String?,
-      isExpired: json['is_expired'] as bool,
-      isValidToSell: json['is_valid_to_sell'] as bool,
-      isSold: json['is_sold'] as bool,
-      instrumentId: json['instrument_id'] as String?,
-      instrumentName: json['instrument_name'] as String?,
-      status: json['status'] as String?,
-    );
-  }
-
-  @override
-  Map<String, dynamic> toJson() {
-    return {
-      'multiplier': multiplier,
-      'commission': commission,
-      if (cancellation != null) 'cancellation': cancellation!.toJson(),
-      if (variant != null) 'variant': variant,
-      if (marketSpotPrice != null)
-        'market_spot_price': marketSpotPrice!.toJson(),
-      if (entrySpot != null) 'entry_spot': entrySpot,
-      if (limitOrder != null) 'limit_order': limitOrder!.toJson(),
-      'stake': stake,
-      'bid_price': bidPrice,
-      if (bidPriceCurrency != null) 'bid_price_currency': bidPriceCurrency,
-      'is_expired': isExpired,
-      'is_valid_to_sell': isValidToSell,
-      'is_sold': isSold,
-      if (instrumentId != null) 'instrument_id': instrumentId,
-      if (instrumentName != null) 'instrument_name': instrumentName,
-      if (status != null) 'status': status,
-    };
-  }
-}
-
-/// Accumulator contract details
-class AccumulatorContractDetails extends ContractDetails {
-  /// Growth rate
-  final String? growthRate;
-
-  /// High barrier
-  final String? highBarrier;
-
-  /// Low barrier
-  final String? lowBarrier;
-
-  /// Entry spot price
-  final String? entrySpot;
-
-  /// Tick count
-  final int? tickCount;
-
-  /// Ticks passed
-  final int? tickPassed;
-
-  const AccumulatorContractDetails({
-    this.growthRate,
-    this.highBarrier,
-    this.lowBarrier,
-    this.entrySpot,
-    this.tickCount,
-    this.tickPassed,
-    required super.stake,
-    required super.bidPrice,
-    super.bidPriceCurrency,
-    required super.isExpired,
-    required super.isValidToSell,
-    required super.isSold,
-    super.instrumentId,
-    super.instrumentName,
-    super.status,
-  });
-
-  factory AccumulatorContractDetails.fromJson(Map<String, dynamic> json) {
-    return AccumulatorContractDetails(
-      growthRate: json['growth_rate'] as String?,
-      highBarrier: json['high_barrier'] as String?,
-      lowBarrier: json['low_barrier'] as String?,
-      entrySpot: json['entry_spot'] as String?,
-      tickCount: json['tick_count'] as int?,
-      tickPassed: json['tick_passed'] as int?,
-      stake: json['stake'] as String,
-      bidPrice: json['bid_price'] as String,
-      bidPriceCurrency: json['bid_price_currency'] as String?,
-      isExpired: json['is_expired'] as bool,
-      isValidToSell: json['is_valid_to_sell'] as bool,
-      isSold: json['is_sold'] as bool,
-      instrumentId: json['instrument_id'] as String?,
-      instrumentName: json['instrument_name'] as String?,
-      status: json['status'] as String?,
-    );
-  }
-
-  @override
-  Map<String, dynamic> toJson() {
-    return {
-      if (growthRate != null) 'growth_rate': growthRate,
-      if (highBarrier != null) 'high_barrier': highBarrier,
-      if (lowBarrier != null) 'low_barrier': lowBarrier,
-      if (entrySpot != null) 'entry_spot': entrySpot,
-      if (tickCount != null) 'tick_count': tickCount,
-      if (tickPassed != null) 'tick_passed': tickPassed,
-      'stake': stake,
-      'bid_price': bidPrice,
-      if (bidPriceCurrency != null) 'bid_price_currency': bidPriceCurrency,
-      'is_expired': isExpired,
-      'is_valid_to_sell': isValidToSell,
-      'is_sold': isSold,
-      if (instrumentId != null) 'instrument_id': instrumentId,
-      if (instrumentName != null) 'instrument_name': instrumentName,
-      if (status != null) 'status': status,
-    };
-  }
-}
-
-/// Rise/Fall contract details
-class RiseFallContractDetails extends ContractDetails {
-  /// Contract barrier
-  final String? barrier;
-
-  /// Entry spot price
-  final String? entrySpot;
-
-  /// Exit spot price
-  final String? exitSpot;
-
-  /// Trade variant (rise/fall)
-  final String? variant;
-
-  const RiseFallContractDetails({
-    this.barrier,
+    this.profitLoss,
+    this.referenceId,
+    this.contractStartTime,
+    this.entryTickTime,
     this.entrySpot,
     this.exitSpot,
+    this.exitTickTime,
     this.variant,
-    required super.stake,
-    required super.bidPrice,
-    super.bidPriceCurrency,
-    required super.isExpired,
-    required super.isValidToSell,
-    required super.isSold,
-    super.instrumentId,
-    super.instrumentName,
-    super.status,
+    this.multiplier,
+    this.commission,
+    this.stake,
+    this.bidPrice,
+    this.bidPriceCurrency,
+    this.isExpired,
+    this.isValidToSell,
+    this.isSold,
+    this.potentialPayout,
+    this.cancellation,
+    this.limitOrder,
+    this.status,
+    this.tickStream,
+    this.validationParams,
+    this.marketSpotPrice,
+    this.additionalFields = const {},
   });
 
-  factory RiseFallContractDetails.fromJson(Map<String, dynamic> json) {
-    return RiseFallContractDetails(
-      barrier: json['barrier'] as String?,
-      entrySpot: json['entry_spot'] as String?,
-      exitSpot: json['exit_spot'] as String?,
-      variant: json['variant'] as String?,
-      stake: json['stake'] as String,
-      bidPrice: json['bid_price'] as String,
-      bidPriceCurrency: json['bid_price_currency'] as String?,
-      isExpired: json['is_expired'] as bool,
-      isValidToSell: json['is_valid_to_sell'] as bool,
-      isSold: json['is_sold'] as bool,
-      instrumentId: json['instrument_id'] as String?,
-      instrumentName: json['instrument_name'] as String?,
-      status: json['status'] as String?,
+  factory ContractDetails.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> remainingFields = Map.from(json);
+
+    T? extract<T>(String key) {
+      final value = remainingFields.remove(key);
+      // Allow type casting for basic types, handle nulls
+      if (value == null) return null;
+      if (T == String) return value.toString() as T?;
+      if (T == int && value is num) return value.toInt() as T?;
+      if (T == double && value is num) return value.toDouble() as T?;
+      if (T == bool) return value as T?;
+      return value as T?;
+    }
+
+    List<TickInStream>? parseTickStream(dynamic data) {
+      if (data is List) {
+        return data
+            .map((item) => TickInStream.fromJson(item as Map<String, dynamic>))
+            .toList();
+      }
+      return null;
+    }
+
+    return ContractDetails(
+      instrumentId: extract<String>('instrument_id'),
+      instrumentName: extract<String>('instrument_name'),
+      profitLoss: extract<String>('profit_loss'),
+      referenceId: extract<String>('reference_id'),
+      contractStartTime: extract<int>('contract_start_time'),
+      entryTickTime: extract<int>('entry_tick_time'),
+      entrySpot: extract<String>('entry_spot'),
+      exitSpot: extract<String>('exit_spot'),
+      exitTickTime: extract<int>('exit_tick_time'),
+      variant: extract<String>('variant'),
+      multiplier: extract<int>('multiplier'),
+      commission: extract<String>('commission'),
+      stake: extract<String>('stake'),
+      bidPrice: extract<String>('bid_price'),
+      bidPriceCurrency: extract<String>('bid_price_currency'),
+      isExpired: extract<bool>('is_expired'),
+      isValidToSell: extract<bool>('is_valid_to_sell'),
+      isSold: extract<bool>('is_sold'),
+      potentialPayout: extract<String>('potential_payout'),
+      cancellation: remainingFields.containsKey('cancellation')
+          ? CancellationDetails.fromJson(
+              remainingFields.remove('cancellation') as Map<String, dynamic>)
+          : null,
+      limitOrder: remainingFields.containsKey('limit_order')
+          ? LimitOrderDetails.fromJson(
+              remainingFields.remove('limit_order') as Map<String, dynamic>)
+          : null,
+      status: extract<String>('status'),
+      tickStream: parseTickStream(remainingFields.remove('tick_stream')),
+      validationParams:
+          remainingFields.remove('validation_params') as Map<String, dynamic>?,
+      marketSpotPrice: remainingFields.containsKey('market_spot_price')
+          ? MarketSpotPrice.fromJson(remainingFields.remove('market_spot_price')
+              as Map<String, dynamic>)
+          : null,
+      additionalFields: remainingFields,
     );
   }
 
-  @override
   Map<String, dynamic> toJson() {
-    return {
-      if (barrier != null) 'barrier': barrier,
-      if (entrySpot != null) 'entry_spot': entrySpot,
-      if (exitSpot != null) 'exit_spot': exitSpot,
-      if (variant != null) 'variant': variant,
-      'stake': stake,
-      'bid_price': bidPrice,
-      if (bidPriceCurrency != null) 'bid_price_currency': bidPriceCurrency,
-      'is_expired': isExpired,
-      'is_valid_to_sell': isValidToSell,
-      'is_sold': isSold,
-      if (instrumentId != null) 'instrument_id': instrumentId,
-      if (instrumentName != null) 'instrument_name': instrumentName,
-      if (status != null) 'status': status,
-    };
+    final Map<String, dynamic> json = {...additionalFields};
+    if (instrumentId != null) {
+      json['instrument_id'] = instrumentId;
+    }
+    if (instrumentName != null) {
+      json['instrument_name'] = instrumentName;
+    }
+    if (profitLoss != null) {
+      json['profit_loss'] = profitLoss;
+    }
+    if (referenceId != null) {
+      json['reference_id'] = referenceId;
+    }
+    if (contractStartTime != null) {
+      json['contract_start_time'] = contractStartTime;
+    }
+    if (entryTickTime != null) {
+      json['entry_tick_time'] = entryTickTime;
+    }
+    if (entrySpot != null) {
+      json['entry_spot'] = entrySpot;
+    }
+    if (exitSpot != null) {
+      json['exit_spot'] = exitSpot;
+    }
+    if (exitTickTime != null) {
+      json['exit_tick_time'] = exitTickTime;
+    }
+    if (variant != null) {
+      json['variant'] = variant;
+    }
+    if (multiplier != null) {
+      json['multiplier'] = multiplier;
+    }
+    if (commission != null) {
+      json['commission'] = commission;
+    }
+    if (stake != null) {
+      json['stake'] = stake;
+    }
+    if (bidPrice != null) {
+      json['bid_price'] = bidPrice;
+    }
+    if (bidPriceCurrency != null) {
+      json['bid_price_currency'] = bidPriceCurrency;
+    }
+    if (isExpired != null) {
+      json['is_expired'] = isExpired;
+    }
+    if (isValidToSell != null) {
+      json['is_valid_to_sell'] = isValidToSell;
+    }
+    if (isSold != null) {
+      json['is_sold'] = isSold;
+    }
+    if (potentialPayout != null) {
+      json['potential_payout'] = potentialPayout;
+    }
+    if (cancellation != null) {
+      json['cancellation'] = cancellation?.toJson();
+    }
+    if (limitOrder != null) {
+      json['limit_order'] = limitOrder?.toJson();
+    }
+    if (status != null) {
+      json['status'] = status;
+    }
+    if (tickStream != null) {
+      json['tick_stream'] = tickStream?.map((e) => e.toJson()).toList();
+    }
+    if (validationParams != null) {
+      json['validation_params'] = validationParams;
+    }
+    if (marketSpotPrice != null) {
+      json['market_spot_price'] = marketSpotPrice?.toJson();
+    }
+    return json;
   }
 }
 
-/// Supporting models
-
-/// Cancellation information for multiplier contracts
-class Cancellation {
-  /// Cancellation ask price
+/// Cancellation information for contracts
+class CancellationDetails {
   final String? askPrice;
-
-  /// Cancellation expiry time
   final int? expiry;
 
-  const Cancellation({
-    this.askPrice,
-    this.expiry,
-  });
+  const CancellationDetails({this.askPrice, this.expiry});
 
-  factory Cancellation.fromJson(Map<String, dynamic> json) {
-    return Cancellation(
+  factory CancellationDetails.fromJson(Map<String, dynamic> json) {
+    return CancellationDetails(
       askPrice: json['ask_price'] as String?,
       expiry: json['expiry'] as int?,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      if (askPrice != null) 'ask_price': askPrice,
-      if (expiry != null) 'expiry': expiry,
-    };
+    final Map<String, dynamic> data = {};
+    if (askPrice != null) {
+      data['ask_price'] = askPrice;
+    }
+    if (expiry != null) {
+      data['expiry'] = expiry;
+    }
+    return data;
   }
 }
 
-/// Market spot price information
-class MarketSpotPrice {
-  /// Price epoch timestamp
-  final int epoch;
+/// Limit order information for contracts
+class LimitOrderDetails {
+  final OrderDetails? takeProfit;
+  final OrderDetails? stopLoss;
+  final OrderDetails? stopOut; // Specific to some products like Multipliers
 
-  /// Current price
-  final String price;
+  const LimitOrderDetails({this.takeProfit, this.stopLoss, this.stopOut});
 
-  const MarketSpotPrice({
-    required this.epoch,
-    required this.price,
+  factory LimitOrderDetails.fromJson(Map<String, dynamic> json) {
+    return LimitOrderDetails(
+      takeProfit: json['take_profit'] != null
+          ? OrderDetails.fromJson(json['take_profit'] as Map<String, dynamic>)
+          : null,
+      stopLoss: json['stop_loss'] != null
+          ? OrderDetails.fromJson(json['stop_loss'] as Map<String, dynamic>)
+          : null,
+      stopOut: json['stop_out'] != null
+          ? OrderDetails.fromJson(json['stop_out'] as Map<String, dynamic>)
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    final Map<String, dynamic> data = {};
+    if (takeProfit != null) {
+      data['take_profit'] = takeProfit?.toJson();
+    }
+    if (stopLoss != null) {
+      data['stop_loss'] = stopLoss?.toJson();
+    }
+    if (stopOut != null) {
+      data['stop_out'] = stopOut?.toJson();
+    }
+    return data;
+  }
+}
+
+/// Details for a specific order type (take_profit, stop_loss, stop_out)
+class OrderDetails {
+  final String? displayName;
+  final String? displayOrderAmount;
+  final num? orderAmount; // API can send string or number, num is safer
+  final int? orderDate;
+
+  const OrderDetails({
+    this.displayName,
+    this.displayOrderAmount,
+    this.orderAmount,
+    this.orderDate,
   });
+
+  factory OrderDetails.fromJson(Map<String, dynamic> json) {
+    return OrderDetails(
+      displayName: json['display_name'] as String?,
+      displayOrderAmount: json['display_order_amount'] as String?,
+      orderAmount: json['order_amount'] as num?,
+      orderDate: json['order_date'] as int?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    final Map<String, dynamic> data = {};
+    if (displayName != null) {
+      data['display_name'] = displayName;
+    }
+    if (displayOrderAmount != null) {
+      data['display_order_amount'] = displayOrderAmount;
+    }
+    if (orderAmount != null) {
+      data['order_amount'] = orderAmount;
+    }
+    if (orderDate != null) {
+      data['order_date'] = orderDate;
+    }
+    return data;
+  }
+}
+
+/// Market spot price (can be nested in contract details)
+class MarketSpotPrice {
+  final int epoch;
+  final String price; // API shows string
+
+  const MarketSpotPrice({required this.epoch, required this.price});
 
   factory MarketSpotPrice.fromJson(Map<String, dynamic> json) {
     return MarketSpotPrice(
@@ -384,7 +445,6 @@ class MarketSpotPrice {
       price: json['price'] as String,
     );
   }
-
   Map<String, dynamic> toJson() {
     return {
       'epoch': epoch,
@@ -393,30 +453,31 @@ class MarketSpotPrice {
   }
 }
 
-/// Limit order information
-class LimitOrder {
-  /// Stop loss value
-  final String? stopLoss;
+/// Tick data within a contract's tick stream
+class TickInStream {
+  final int epoch;
+  final String tick; // Tick value, API shows number but often safer as string
+  final String? tickDisplayValue;
 
-  /// Take profit value
-  final String? takeProfit;
-
-  const LimitOrder({
-    this.stopLoss,
-    this.takeProfit,
+  const TickInStream({
+    required this.epoch,
+    required this.tick,
+    this.tickDisplayValue,
   });
 
-  factory LimitOrder.fromJson(Map<String, dynamic> json) {
-    return LimitOrder(
-      stopLoss: json['stop_loss'] as String?,
-      takeProfit: json['take_profit'] as String?,
+  factory TickInStream.fromJson(Map<String, dynamic> json) {
+    return TickInStream(
+      // Ensure 'tick' is parsed robustly, defaulting to '0' if not convertible.
+      tick: (json['tick'] ?? 0).toString(),
+      epoch: json['epoch'] as int,
+      tickDisplayValue: json['tick_display_value'] as String?,
     );
   }
-
   Map<String, dynamic> toJson() {
     return {
-      if (stopLoss != null) 'stop_loss': stopLoss,
-      if (takeProfit != null) 'take_profit': takeProfit,
+      'epoch': epoch,
+      'tick': tick,
+      if (tickDisplayValue != null) 'tick_display_value': tickDisplayValue,
     };
   }
 }

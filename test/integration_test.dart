@@ -97,15 +97,21 @@ void main() {
           instrumentId: instrumentId,
           amount: 10.0,
           multiplier: 100,
-          tradeType: 'up',
           stopLoss: 5.0,
           takeProfit: 20.0,
         );
 
-        expect(proposal.askPrice, isNotNull);
-        print('Multiplier proposal for $instrumentId: ${proposal.askPrice}');
-        if (proposal.payout != null) {
-          print('Potential payout: ${proposal.payout}');
+        final proposalVariant = proposal.variants?.firstWhere(
+            (v) => v.variant == 'MULTUP' || v.variant == 'MULTDOWN',
+            orElse: () =>
+                throw StateError('No suitable variant found in proposal'));
+
+        expect(proposalVariant?.contractDetails.bidPrice, isNotNull);
+        print(
+            'Multiplier proposal for $instrumentId: ${proposalVariant?.contractDetails.bidPrice}');
+        if (proposalVariant?.contractDetails.potentialPayout != null) {
+          print(
+              'Potential payout: ${proposalVariant?.contractDetails.potentialPayout}');
         }
       }, skip: 'Requires mock server');
 
@@ -186,7 +192,10 @@ void main() {
         const maxTicks = 3;
 
         await for (final tick in api.market
-            .streamTicks(instrumentId: instrumentId)
+            .streamTicks(
+                instrumentId: instrumentId,
+                startEpochMs: DateTime.now().millisecondsSinceEpoch,
+                granularity: 1)
             .take(maxTicks)) {
           tickCount++;
           expect(tick.price, isNotNull);

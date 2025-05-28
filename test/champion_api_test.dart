@@ -113,18 +113,40 @@ void main() {
           'payout': '21.00',
           'spot': '110.123',
           'spot_time': 1640995200,
+          'variants': [
+            {
+              'variant': 'MULTUP',
+              'contract_details': {
+                'bid_price': '10.50',
+                'bid_price_currency': 'USD',
+                'is_expired': false,
+                'is_sold': false,
+                'is_valid_to_sell': true,
+                'market_spot_price': {
+                  'price': '110.123',
+                  'epoch': 1640995200,
+                  'quote_currency': 'USD',
+                  'last_updated_epoch_ms': 1640995200000
+                },
+                'potential_payout': '21.00',
+                'stake': '10.00',
+                'start_time': 1640995000,
+                'status': 'open'
+              }
+            }
+          ]
         };
 
         final proposal = Proposal.fromJson(json);
-        expect(proposal.askPrice, '10.50');
-        expect(proposal.id, 'proposal_123');
-        expect(proposal.payout, '21.00');
-        expect(proposal.spot, '110.123');
-        expect(proposal.spotTime, 1640995200);
+        final variantDetails = proposal.variants?.first.contractDetails;
+        expect(variantDetails?.bidPrice, '10.50');
+        expect(variantDetails?.potentialPayout, '21.00');
+        expect(variantDetails?.marketSpotPrice.price, '110.123');
+        expect(variantDetails?.marketSpotPrice.epoch, 1640995200);
 
         final serialized = proposal.toJson();
-        expect(serialized['ask_price'], '10.50');
-        expect(serialized['id'], 'proposal_123');
+        expect(serialized['variants'][0]['contract_details']['bid_price'],
+            '10.50');
       });
 
       test('Contract with multiplier details serialization', () {
@@ -148,9 +170,9 @@ void main() {
         final contract = Contract.fromJson(json);
         expect(contract.contractId, 'contract_123');
         expect(contract.productId, 'multipliers');
-        expect(contract.contractDetails, isA<MultiplierContractDetails>());
+        expect(contract.contractDetails, isA<ContractDetails>());
 
-        final details = contract.contractDetails as MultiplierContractDetails;
+        final details = contract.contractDetails;
         expect(details.multiplier, 100);
         expect(details.commission, '0.50');
         expect(details.variant, 'up');
@@ -171,7 +193,6 @@ void main() {
           instrumentId: 'frxUSDJPY',
           amount: 10.0,
           multiplier: 100,
-          tradeType: 'up',
           stopLoss: 5.0,
           takeProfit: 20.0,
         );
@@ -181,7 +202,6 @@ void main() {
         expect(json['instrument_id'], 'frxUSDJPY');
         expect(json['amount'], 10.0);
         expect(json['multiplier'], 100);
-        expect(json['trade_type'], 'up');
         expect(json['stop_loss'], 5.0);
         expect(json['take_profit'], 20.0);
       });

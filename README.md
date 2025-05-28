@@ -39,7 +39,7 @@ Champion API provides a complete mock implementation of the Deriv trading API, a
 ### 💼 Trading Operations
 - Contract buying and selling
 - Position management
-- Proposal generation
+- Proposal generation (specific to product types)
 - Real-time contract streaming
 
 ### 🔧 Admin Features
@@ -77,17 +77,29 @@ void main() async {
   
   // List available instruments
   final instruments = await api.market.getInstruments();
-  print('Available instruments: ${instruments.length}');
+  print('Available instruments: ${instruments.instruments.length}');
   
-  // Get a trading proposal
-  final proposal = await api.trading.getProposal(
-    productId: 'multipliers',
-    instrumentId: 'frxUSDJPY',
-    amount: 10.0,
-    multiplier: 100,
-    tradeType: 'up',
-  );
-  print('Proposal price: ${proposal.askPrice}');
+  // Get a trading proposal for Multipliers
+  try {
+    final proposal = await api.trading.getMultiplierProposal(
+      instrumentId: instruments.instruments.first.id, // Use a valid instrument ID
+      amount: 10.0,
+      multiplier: 100,
+      // stopLoss and takeProfit are optional
+    );
+    // The proposal object structure depends on the product.
+    // For Multipliers, it usually contains variants.
+    if (proposal.variants != null && proposal.variants!.isNotEmpty) {
+       final firstVariant = proposal.variants!.first.contractDetails;
+      print('Multiplier Proposal: Spot ${firstVariant.marketSpotPrice.price}, Stake ${firstVariant.stake}');
+    } else {
+      print('Received a proposal structure not primarily based on variants (e.g. Rise/Fall direct details).');
+    }
+  } on ChampionApiException catch (e) {
+    print('Error getting proposal: ${e.message}');
+  } finally {
+    api.dispose();
+  }
 }
 ```
 
@@ -110,10 +122,10 @@ void main() async {
 ### Trading
 - `GET /v1/trading/contracts/open` - Get open contracts
 - `GET /v1/trading/contracts/close` - Get closed contracts
-- `POST /v1/trading/contracts/buy` - Buy a contract
+- `POST /v1/trading/contracts/buy` - Buy a contract (uses product-specific helper methods)
 - `POST /v1/trading/contracts/sell` - Sell a contract
-- `POST /v1/trading/contracts/cancel` - Cancel a contract
-- `POST /v1/trading/proposal` - Get trading proposal
+- `POST /v1/trading/contracts/cancel` - Cancel a contract (Note: API might not support this for all products)
+- `POST /v1/trading/proposal` - Get trading proposal (uses product-specific helper methods)
 - `GET /v1/trading/proposal/stream` - Stream proposals
 
 ### Admin
@@ -125,40 +137,88 @@ void main() async {
 Leveraged trading with configurable multipliers and optional stop loss/take profit.
 
 ```dart
-final proposal = await api.trading.getProposal(
-  productId: 'multipliers',
-  instrumentId: 'frxUSDJPY',
+// Get a proposal
+final proposal = await api.trading.getMultiplierProposal(
+  instrumentId: 'frxUSDJPY', // Example instrument ID
   amount: 10.0,
   multiplier: 100,
-  tradeType: 'up',
   stopLoss: 5.0,
   takeProfit: 20.0,
+  cancellation: 5, // Optional: 5 minutes cancellation window
 );
+
+// Buy a contract based on the proposal (simplified - actual buy needs idempotency etc)
+if (proposal.variants != null && proposal.variants!.isNotEmpty) {
+  // Assuming user chooses the first variant
+  // In a real app, you'd use details from the chosen variant for the buy request.
+  final buyDetails = proposal.variants!.first;
+  
+  final contract = await api.trading.buyMultiplierContract(
+    instrumentId: 'frxUSDJPY',
+    amount: double.tryParse(buyDetails.contractDetails.stake) ?? 10.0,
+    multiplier: buyDetails.contractDetails.multiplier ?? 100,
+    tradeType: buyDetails.variant == 'MULTUP' ? 'up' : 'down',
+    stopLoss: 5.0, // These might come from user input or defaults
+    takeProfit: 20.0,
+    cancellation: 5,
+  );
+  print('Bought Multiplier Contract ID: ${contract.contractId}');
+}
 ```
 
 ### Accumulators
 Accumulation-based products with barrier levels.
 
 ```dart
-final proposal = await api.trading.getProposal(
-  productId: 'accumulators',
-  instrumentId: 'R_50',
+// Get a proposal
+final proposal = await api.trading.getAccumulatorProposal(
+  instrumentId: 'R_50', // Example instrument ID
   amount: 1.0,
   growthRate: 0.01,
+  takeProfit: 100.0, // Optional take profit for accumulator proposal
 );
+
+// Buy a contract (simplified)
+if (proposal.variants != null && proposal.variants!.isNotEmpty) {
+  final buyDetails = proposal.variants!.first.contractDetails;
+  final contract = await api.trading.buyAccumulatorContract(
+    instrumentId: 'R_50',
+    amount: double.tryParse(buyDetails.stake) ?? 1.0,
+    growthRate: buyDetails.growthRate ?? 0.01,
+    takeProfit: 100.0, // From user input or defaults
+  );
+  print('Bought Accumulator Contract ID: ${contract.contractId}');
+}
 ```
 
 ### Rise/Fall
 Binary options for directional trading.
 
 ```dart
-final proposal = await api.trading.getProposal(
-  productId: 'rise_fall',
-  instrumentId: 'frxEURUSD',
+// Get a proposal
+// Note: Rise/Fall proposal structure is different, might not have variants.
+final proposal = await api.trading.getRiseFallProposal(
+  instrumentId: 'frxEURUSD', // Example instrument ID
   amount: 5.0,
-  duration: 60,
+  duration: 60, // seconds
   tradeType: 'rise',
 );
+
+// Buy a contract (simplified)
+// The proposal.contractDetails for Rise/Fall contains the main fields directly
+if (proposal.contractDetails != null) {
+  // For Rise/Fall, the parameters for buying are often simpler or might use
+  // a proposal ID from the `proposal.contractDetails['id']` if the API supports it.
+  // The current buyRiseFallContract helper constructs the body.
+  final contract = await api.trading.buyRiseFallContract(
+    instrumentId: 'frxEURUSD',
+    amount: 5.0, // From user input
+    duration: 60,
+    tradeType: 'rise', // 'rise' or 'fall'
+  );
+  print('Bought Rise/Fall Contract ID: ${contract.contractId}');
+}
+
 ```
 
 ## Streaming
@@ -172,8 +232,14 @@ api.accounting.streamBalance().listen((balance) {
 });
 
 // Stream price ticks
-api.market.streamTicks('frxUSDJPY').listen((tick) {
-  print('New tick: ${tick.price} at ${tick.epochMs}');
+// Note: streamTicks and streamOHLC now require startEpochMs and granularity
+final now = DateTime.now().millisecondsSinceEpoch;
+api.market.streamTicks(
+  instrumentId: 'frxUSDJPY',
+  startEpochMs: now,
+  granularity: 60, // Or appropriate value for ticks
+).listen((tick) {
+  print('New tick: ${tick.price} at ${DateTime.fromMillisecondsSinceEpoch(tick.epochMs)}');
 });
 
 // Stream open contracts
@@ -191,7 +257,7 @@ try {
   final balance = await api.accounting.getBalance();
   print('Balance: ${balance.balance}');
 } on ChampionApiException catch (e) {
-  print('API Error: ${e.message} (${e.code})');
+  print('API Error: ${e.message} (${e.code}) Status: ${e.statusCode}');
 } catch (e) {
   print('Unexpected error: $e');
 }

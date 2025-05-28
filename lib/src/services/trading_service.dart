@@ -1,5 +1,6 @@
 import '../models/contract.dart';
 import '../models/proposal.dart';
+import 'dart:convert';
 
 /// Service for trading operations
 class TradingService {
@@ -147,21 +148,41 @@ class TradingService {
     required String instrumentId,
     required double amount,
     required int multiplier,
-    required String tradeType, // 'up' or 'down'
+    required String
+        tradeType, // 'up' or 'down' -> maps to variant MULTUP/MULTDOWN
     double? stopLoss,
     double? takeProfit,
-  }) {
-    final request = {
-      'product_id': 'multipliers',
+    int? cancellation,
+    String? idempotencyKey,
+  }) async {
+    final Map<String, dynamic> proposalDetails = {
       'instrument_id': instrumentId,
-      'amount': amount,
-      'multiplier': multiplier,
-      'trade_type': tradeType,
-      if (stopLoss != null) 'stop_loss': stopLoss,
-      if (takeProfit != null) 'take_profit': takeProfit,
+      'stake': amount.toString(), // API expects string
+      'multiplier': multiplier, // API expects number
+      'variant': tradeType.toUpperCase() == 'UP' ? 'MULTUP' : 'MULTDOWN',
     };
 
-    return buyContract(request);
+    final Map<String, dynamic> limitOrder = {};
+    if (stopLoss != null) {
+      limitOrder['stop_loss'] = stopLoss; // API expects number
+    }
+    if (takeProfit != null) {
+      limitOrder['take_profit'] = takeProfit; // API expects number
+    }
+
+    if (limitOrder.isNotEmpty) {
+      proposalDetails['limit_order'] = limitOrder;
+    }
+
+    if (cancellation != null) {
+      proposalDetails['cancellation'] = cancellation; // API expects number
+    }
+
+    return _buyContract(
+      productId: 'multipliers',
+      proposalDetails: proposalDetails,
+      idempotencyKey: idempotencyKey,
+    );
   }
 
   /// Buy an accumulator contract
@@ -169,33 +190,98 @@ class TradingService {
     required String instrumentId,
     required double amount,
     required double growthRate,
-  }) {
-    final request = {
-      'product_id': 'accumulators',
+    double? takeProfit,
+    String? idempotencyKey,
+  }) async {
+    final Map<String, dynamic> proposalDetails = {
       'instrument_id': instrumentId,
-      'amount': amount,
-      'growth_rate': growthRate,
+      'stake': amount.toString(), // API expects string
+      'growth_rate': growthRate, // API expects number
     };
 
-    return buyContract(request);
+    if (takeProfit != null) {
+      proposalDetails['limit_order'] = {
+        'take_profit': takeProfit, // API expects number
+      };
+    }
+
+    return _buyContract(
+      productId: 'accumulators',
+      proposalDetails: proposalDetails,
+      idempotencyKey: idempotencyKey,
+    );
   }
 
   /// Buy a rise/fall contract
+  /// NOTE: The Champion API documentation for buying Rise/Fall via HTTP POST is unclear.
+  /// This implementation attempts to match a plausible structure based on other product types
+  /// and common fields from WebSocket specifications.
+  /// This might be the source of the "instrument_id is required" error if the server
+  /// expects a different format for product_id: 'rise_fall'.
   Future<Contract> buyRiseFallContract({
     required String instrumentId,
     required double amount,
-    required int duration,
-    required String tradeType, // 'rise' or 'fall'
-  }) {
-    final request = {
-      'product_id': 'rise_fall',
-      'instrument_id': instrumentId,
-      'amount': amount,
-      'duration': duration,
-      'trade_type': tradeType,
+    required int duration, // in seconds, typically
+    required String
+        tradeType, // 'rise' or 'fall' -> maps to contract_type CALL/PUT
+    String durationUnit = 's', // Default to seconds
+    String basis = 'stake', // Default to stake
+    String? idempotencyKey,
+  }) async {
+    final String contractType;
+    if (tradeType.toLowerCase() == 'rise') {
+      contractType = 'CALL';
+    } else if (tradeType.toLowerCase() == 'fall') {
+      contractType = 'PUT';
+    } else {
+      // Potentially support other types if Champion API expands
+      // For now, use tradeType directly if not rise/fall, though this might be incorrect.
+      contractType = tradeType.toUpperCase();
+    }
+
+    final Map<String, dynamic> proposalDetails = {
+      'instrument_id': instrumentId, // Mapping to 'symbol' in some API docs
+      'stake': amount
+          .toString(), // API expects string, maps to 'amount' in some docs
+      'contract_type': contractType,
+      'duration': duration, // API expects number
+      'duration_unit': durationUnit,
+      'basis': basis,
+      // No direct equivalent for 'price' (max buy price) from WS spec in this structure
     };
 
-    return buyContract(request);
+    return _buyContract(
+      productId:
+          'rise_fall', // Or should this be based on contractType for some APIs?
+      proposalDetails: proposalDetails,
+      idempotencyKey: idempotencyKey,
+    );
+  }
+
+  /// Generic buy contract method - now simplified
+  Future<Contract> _buyContract({
+    required String productId,
+    required Map<String, dynamic>
+        proposalDetails, // This is now pre-formed by the caller
+    String? idempotencyKey,
+  }) async {
+    final String effectiveIdempotencyKey =
+        idempotencyKey ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+    final Map<String, dynamic> body = {
+      'idempotency_key': effectiveIdempotencyKey,
+      'product_id': productId,
+      'proposal_details': proposalDetails, // Use as is
+    };
+
+    final response =
+        await _apiClient.post('/trading/contracts/buy', body: body);
+
+    if (response.containsKey('data')) {
+      return Contract.fromJson(response['data'] as Map<String, dynamic>);
+    }
+
+    return Contract.fromJson(response);
   }
 
   /// Sell an existing contract
@@ -205,7 +291,9 @@ class TradingService {
       {required String contractId}) async {
     final response = await _apiClient.post(
       '/trading/contracts/sell',
-      body: {'contract_id': contractId},
+      body: {
+        'contract_id': contractId
+      }, // Pass as a Map, client handles encoding
     );
 
     return response;
@@ -216,11 +304,9 @@ class TradingService {
   /// Calls: POST /v1/trading/contracts/cancel
   Future<Map<String, dynamic>> cancelContract(
       {required String contractId}) async {
-    final queryParams = {'contract_id': contractId};
-
     final response = await _apiClient.post(
       '/trading/contracts/cancel',
-      queryParams: queryParams,
+      body: {'contract_id': contractId},
     );
 
     return response;
@@ -242,45 +328,53 @@ class TradingService {
     return Proposal.fromJson(response);
   }
 
-  /// Get a multiplier proposal
+  /// Get a trading proposal for a multiplier contract
+  ///
+  /// Calls: POST /v1/trading/proposal
   Future<Proposal> getMultiplierProposal({
     required String instrumentId,
     required double amount,
     required int multiplier,
-    required String tradeType,
     double? stopLoss,
     double? takeProfit,
-  }) {
+    int? cancellation,
+  }) async {
     final request = MultiplierProposalRequest(
       productId: 'multipliers',
       instrumentId: instrumentId,
-      amount: amount,
+      amount: amount, // Will be converted to 'stake' in toJson
       multiplier: multiplier,
-      tradeType: tradeType,
       stopLoss: stopLoss,
+      takeProfit: takeProfit,
+      cancellation: cancellation,
+    );
+
+    return getProposal(request);
+  }
+
+  /// Get a trading proposal for an accumulator contract
+  ///
+  /// Calls: POST /v1/trading/proposal
+  Future<Proposal> getAccumulatorProposal({
+    required String instrumentId,
+    required double amount,
+    required double growthRate,
+    double? takeProfit,
+  }) async {
+    final request = AccumulatorProposalRequest(
+      productId: 'accumulators',
+      instrumentId: instrumentId,
+      amount: amount, // Will be converted to 'stake' in toJson
+      growthRate: growthRate,
       takeProfit: takeProfit,
     );
 
     return getProposal(request);
   }
 
-  /// Get an accumulator proposal
-  Future<Proposal> getAccumulatorProposal({
-    required String instrumentId,
-    required double amount,
-    required double growthRate,
-  }) {
-    final request = AccumulatorProposalRequest(
-      productId: 'accumulators',
-      instrumentId: instrumentId,
-      amount: amount,
-      growthRate: growthRate,
-    );
-
-    return getProposal(request);
-  }
-
-  /// Get a rise/fall proposal
+  /// Get a trading proposal for a rise/fall contract
+  ///
+  /// Calls: POST /v1/trading/proposal
   Future<Proposal> getRiseFallProposal({
     required String instrumentId,
     required double amount,
@@ -298,25 +392,32 @@ class TradingService {
     return getProposal(request);
   }
 
-  /// Stream real-time proposals
+  /// Stream proposal updates for a potential trade
   ///
   /// Calls: GET /v1/trading/proposal/stream
   Stream<Proposal> streamProposal({
     required String productId,
     required String instrumentId,
-    required double amount,
-    Map<String, dynamic>? additionalParams,
+    required double amount, // This will be used as 'stake' in the query
+    Map<String, dynamic> additionalParams = const {},
   }) async* {
     final queryParams = {
       'product_id': productId,
       'instrument_id': instrumentId,
-      'amount': amount.toString(),
-      ...?additionalParams
-          ?.map((key, value) => MapEntry(key, value.toString())),
+      'stake': amount.toString(), // API expects 'stake'
+      ...additionalParams.map((key, value) {
+        // Ensure complex objects like limit_order are JSON strings if required by API
+        if (value is Map || value is List) {
+          return MapEntry(key, jsonEncode(value));
+        }
+        return MapEntry(key, value.toString());
+      }),
     };
 
-    await for (final data in _apiClient.getStream('/trading/proposal/stream',
-        queryParams: queryParams)) {
+    final stream = _apiClient.getStream('/trading/proposal/stream',
+        queryParams: queryParams);
+
+    await for (final data in stream) {
       // Handle the response structure: {"data":{...}}
       if (data.containsKey('data')) {
         yield Proposal.fromJson(data['data'] as Map<String, dynamic>);

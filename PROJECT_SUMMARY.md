@@ -51,11 +51,11 @@ champion_api/
 All 20 endpoints from the Go mock server:
 - **Accounting**: Balance management and streaming
 - **Market Data**: Instruments, OHLC history, tick data, products
-- **Trading**: Contract management, buying/selling, proposals
+- **Trading**: Contract management, buying/selling, proposals (product-specific)
 - **Admin**: State management
 
 ### 2. **Type-Safe Models**
-- **Product-Specific Contracts**: Separate models for Multipliers, Accumulators, Rise/Fall
+- **Product-Specific Contracts & Proposals**: Detailed models for Multipliers, Accumulators, Rise/Fall
 - **Request/Response Models**: Structured data with validation
 - **Null Safety**: Full Dart 3.0 null safety compliance
 
@@ -68,7 +68,7 @@ Server-Sent Events (SSE) support for:
 - Proposal streams
 
 ### 4. **Developer Experience**
-- **Convenience Methods**: Simplified APIs for common operations
+- **Convenience Methods**: Simplified APIs for common operations (e.g., `buyMultiplierContract`)
 - **Error Handling**: Structured exceptions with detailed context
 - **Testing Support**: Mock generation and integration tests
 - **Documentation**: Comprehensive docs and examples
@@ -77,11 +77,21 @@ Server-Sent Events (SSE) support for:
 
 ### 1. **Multipliers**
 ```dart
+// Get a proposal
+final proposal = await api.trading.getMultiplierProposal(
+  instrumentId: 'frxUSDJPY',
+  amount: 10.0,
+  multiplier: 100,
+  stopLoss: 5.0,
+  takeProfit: 20.0,
+);
+
+// Buy a contract
 final contract = await api.trading.buyMultiplierContract(
   instrumentId: 'frxUSDJPY',
   amount: 10.0,
   multiplier: 100,
-  tradeType: 'up',
+  tradeType: 'up', // 'up' or 'down'
   stopLoss: 5.0,
   takeProfit: 20.0,
 );
@@ -89,15 +99,34 @@ final contract = await api.trading.buyMultiplierContract(
 
 ### 2. **Accumulators**
 ```dart
+// Get a proposal
+final proposal = await api.trading.getAccumulatorProposal(
+  instrumentId: 'R_50',
+  amount: 1.0,
+  growthRate: 0.01,
+  takeProfit: 50.0, // Optional
+);
+
+// Buy a contract
 final contract = await api.trading.buyAccumulatorContract(
   instrumentId: 'R_50',
   amount: 1.0,
   growthRate: 0.01,
+  takeProfit: 50.0, // Optional
 );
 ```
 
 ### 3. **Rise/Fall**
 ```dart
+// Get a proposal
+final proposal = await api.trading.getRiseFallProposal(
+  instrumentId: 'frxEURUSD',
+  amount: 5.0,
+  duration: 60, // seconds
+  tradeType: 'rise', // 'rise' or 'fall'
+);
+
+// Buy a contract
 final contract = await api.trading.buyRiseFallContract(
   instrumentId: 'frxEURUSD',
   amount: 5.0,
@@ -139,35 +168,45 @@ final history = await api.market.getTickHistory(
     fromEpochMs: DateTime.now().subtract(Duration(hours: 1)).millisecondsSinceEpoch,
     toEpochMs: DateTime.now().millisecondsSinceEpoch,
     count: 100,
+    // Note: granularity might be required by API, check specific endpoint docs
   ),
 );
 
 // Stream real-time ticks
-api.market.streamTicks(instrumentId: 'frxUSDJPY').listen((tick) {
+// Note: streamTicks and streamOHLC now require startEpochMs and granularity
+final now = DateTime.now().millisecondsSinceEpoch;
+api.market.streamTicks(
+  instrumentId: 'frxUSDJPY',
+  startEpochMs: now,
+  granularity: 60, // Example: 60 second granularity for ticks, adjust as needed
+).listen((tick) {
   print('New tick: ${tick.price}');
 });
 ```
 
 ### Trading Operations
 ```dart
-// Get proposal
+// Get multiplier proposal
 final proposal = await api.trading.getMultiplierProposal(
   instrumentId: 'frxUSDJPY',
   amount: 10.0,
   multiplier: 100,
-  tradeType: 'up',
+  tradeType: 'up', // This parameter was removed from getMultiplierProposal
+                  // The API returns both variants. Use proposal.variants to inspect.
 );
 
-// Buy contract
+// Buy multiplier contract
 final contract = await api.trading.buyMultiplierContract(
   instrumentId: 'frxUSDJPY',
   amount: 10.0,
   multiplier: 100,
-  tradeType: 'up',
+  tradeType: 'up', // 'up' or 'down' for the buy variant
 );
 
 // Sell contract
-await api.trading.sellContract(contractId: contract.contractId);
+// Make sure contract exists and is sellable
+// final sellStatus = await api.trading.sellContract(contractId: contract.contractId);
+// print('Sell status: $sellStatus');
 ```
 
 ## 🧪 Testing
@@ -185,28 +224,28 @@ cd your-mock-server-directory
 go run cmd/service/main.go --debug
 
 # Then run integration tests (remove skip annotations)
-dart test test/integration_test.dart
+dart test test/live_api_test.dart # (Was integration_test.dart, using live_api_test.dart example)
 ```
 
 ## 📦 Dependencies
 
 ### Runtime Dependencies
-- `http: ^1.1.0` - HTTP client
-- `json_annotation: ^4.8.1` - JSON serialization
-- `equatable: ^2.0.5` - Object equality
+- `http: ^1.1.0` - HTTP client (or current version)
+- `json_annotation: ^4.8.1` - JSON serialization (or current version)
+- `equatable: ^2.0.5` - Object equality (or current version)
 
 ### Development Dependencies
-- `build_runner: ^2.4.7` - Code generation
-- `json_serializable: ^6.7.1` - JSON serialization generator
-- `mockito: ^5.4.2` - Mock generation for testing
-- `test: ^1.21.0` - Testing framework
+- `build_runner: ^2.4.7` - Code generation (or current version)
+- `json_serializable: ^6.7.1` - JSON serialization generator (or current version)
+- `mockito: ^5.4.2` - Mock generation for testing (or current version)
+- `test: ^1.21.0` - Testing framework (or current version)
 
 ## 🔄 Integration with Go Mock Server
 
 The library is designed to work seamlessly with the existing Go mock server:
 
 1. **Endpoint Mapping**: Direct 1:1 mapping with Go routes
-2. **Data Models**: Match Go struct definitions
+2. **Data Models**: Match Go struct definitions where possible, adapting for Dart best practices
 3. **Error Handling**: Compatible with Go error responses
 4. **Streaming**: SSE implementation matches Go streaming endpoints
 
@@ -216,9 +255,9 @@ The library is designed to work seamlessly with the existing Go mock server:
 - ✅ **HTTP Client**: Complete with streaming support
 - ✅ **Service Layer**: All 4 services with 20+ methods
 - ✅ **Error Handling**: Structured exception system
-- ✅ **Testing**: Unit tests and integration framework
+- ✅ **Testing**: Unit tests and integration framework (live_api_test.dart)
 - ✅ **Documentation**: README, examples, and API docs
-- ✅ **Quality Assurance**: No linter errors, full test coverage
+- ✅ **Quality Assurance**: No linter errors, full test coverage aimed
 
 ## 🎉 Ready for Use
 
@@ -231,16 +270,17 @@ The Champion API library is **production-ready** and can be immediately integrat
 
 ## 📞 Next Steps
 
-1. **Integration Testing**: Test with running Go mock server
-2. **Performance Testing**: Stress test streaming endpoints
-3. **Documentation**: Add more usage examples
-4. **Publishing**: Consider publishing to pub.dev
-5. **CI/CD**: Set up automated testing pipeline
+1. **Thorough Integration Testing**: Rigorously test with a consistently running Go mock server, especially the buy contract flows for all product types to ensure the recent refactoring fixed the "instrument_id is required" issue.
+2. **API Documentation Alignment**: Continuously verify models and request/response structures against any updates to the canonical API documentation.
+3. **Rise/Fall Buy Contract Clarification**: Investigate the exact expected HTTP POST body for buying Rise/Fall contracts if the current implementation in `buyRiseFallContract` still faces issues. This might require direct communication with the backend team or more detailed API specs for that specific case.
+4. **Performance Testing**: Stress test streaming endpoints.
+5. **Publishing**: Consider publishing to pub.dev if intended for wider use.
+6. **CI/CD**: Set up automated testing pipeline.
 
 ---
 
-**Project Status**: ✅ **COMPLETE AND READY FOR INTEGRATION**
+**Project Status**: ✅ **REFACTORED AND PENDING VERIFICATION ON BUY FLOWS**
 
 **Total Development Time**: Comprehensive implementation with full test coverage
-**Code Quality**: Production-ready with zero linter errors
-**Test Coverage**: Extensive unit tests and integration test framework 
+**Code Quality**: Production-ready with zero linter errors aimed
+**Test Coverage**: Extensive unit tests and integration test framework (live_api_test.dart) 

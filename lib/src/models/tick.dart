@@ -7,7 +7,7 @@ class Tick {
   final String? bid;
 
   /// Current price
-  final String price;
+  final String? price;
 
   /// Timestamp in milliseconds since epoch
   final int epochMs;
@@ -18,7 +18,7 @@ class Tick {
   const Tick({
     this.ask,
     this.bid,
-    required this.price,
+    this.price,
     required this.epochMs,
     this.tickDisplayValue,
   });
@@ -27,8 +27,8 @@ class Tick {
     return Tick(
       ask: json['ask'] as String?,
       bid: json['bid'] as String?,
-      price: json['price'] as String? ?? json['tick'] as String,
-      epochMs: json['epoch_ms'] as int? ?? json['epoch'] as int,
+      price: json['price'] as String?,
+      epochMs: json['epoch_ms'] as int,
       tickDisplayValue: json['tick_display_value'] as String?,
     );
   }
@@ -37,7 +37,7 @@ class Tick {
     return {
       if (ask != null) 'ask': ask,
       if (bid != null) 'bid': bid,
-      'price': price,
+      if (price != null) 'price': price,
       'epoch_ms': epochMs,
       if (tickDisplayValue != null) 'tick_display_value': tickDisplayValue,
     };

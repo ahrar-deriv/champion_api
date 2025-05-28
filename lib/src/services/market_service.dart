@@ -51,10 +51,12 @@ class MarketService {
   Stream<OHLC> streamOHLC({
     required String instrumentId,
     required int granularity,
+    required int startEpochMs,
   }) async* {
     final queryParams = {
       'instrument_id': instrumentId,
       'granularity': granularity.toString(),
+      'start_epoch_ms': startEpochMs.toString(),
     };
 
     await for (final data in _apiClient.getStream(
@@ -89,9 +91,15 @@ class MarketService {
   /// Stream real-time tick data
   ///
   /// Calls: GET /v1/market/instruments/ticks/stream
-  Stream<Tick> streamTicks({required String instrumentId}) async* {
+  Stream<Tick> streamTicks({
+    required String instrumentId,
+    required int startEpochMs,
+    required int granularity,
+  }) async* {
     final queryParams = {
       'instrument_id': instrumentId,
+      'start_epoch_ms': startEpochMs.toString(),
+      'granularity': granularity.toString(),
     };
 
     await for (final data in _apiClient.getStream(
